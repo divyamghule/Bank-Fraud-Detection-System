@@ -17,12 +17,14 @@ if command -v python3.12 >/dev/null 2>&1; then
     PYTHON_CMD="python3.12"
 elif command -v python3.11 >/dev/null 2>&1; then
     PYTHON_CMD="python3.11"
+elif command -v python3.13 >/dev/null 2>&1; then
+    PYTHON_CMD="python3.13"
 elif command -v python3 >/dev/null 2>&1; then
     PYTHON_CMD="python3"
 fi
 
 if [ -z "$PYTHON_CMD" ]; then
-    echo "ERROR: Python 3.11 or 3.12 was not found."
+    echo "ERROR: Python 3.11, 3.12, or 3.13 was not found."
     echo "Install Python 3.12 and try again."
     exit 1
 fi

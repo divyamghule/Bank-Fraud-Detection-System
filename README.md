@@ -77,9 +77,11 @@ Opens at `http://localhost:8501`
 
 ### Supported Python Version
 
-Use Python 3.11 or 3.12. The project dependencies, especially `scikit-learn==1.6.1`, are most reliable on those versions. Python 3.14 can trigger build errors on some Windows machines.
+Use Python 3.11, 3.12, or 3.13. The launch scripts prefer 3.12, then 3.11, then 3.13.
 
-The launcher scripts now try to pick Python 3.12 first, then 3.11, and automatically create the virtual environment.
+Avoid Python 3.14+ for this project because some dependencies may fail to build on Windows.
+
+The launcher scripts automatically select a supported Python version and create the virtual environment.
 
 ### One-Command Launchers
 
@@ -93,6 +95,14 @@ Both scripts will:
 - install dependencies
 - generate the dataset if needed
 - start Streamlit
+
+If setup fails on a fresh clone, run this once and retry:
+
+```bash
+# Windows PowerShell
+Remove-Item -Recurse -Force .venv
+./run.bat
+```
 
 ---
 

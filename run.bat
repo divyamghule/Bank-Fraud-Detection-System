@@ -12,21 +12,20 @@ echo 🏦 Bank Fraud Detection System
 echo ========================================
 echo.
 
-REM Prefer Python 3.12 or 3.11 for compatibility with project dependencies
+REM Prefer Python 3.12 or 3.11 (fallback to 3.13) for compatibility
 where py >nul 2>nul
 if %errorlevel%==0 (
     py -3.12 -c "import sys" >nul 2>nul && set "PYTHON_CMD=py -3.12"
     if not defined PYTHON_CMD (
         py -3.11 -c "import sys" >nul 2>nul && set "PYTHON_CMD=py -3.11"
     )
+    if not defined PYTHON_CMD (
+        py -3.13 -c "import sys" >nul 2>nul && set "PYTHON_CMD=py -3.13"
+    )
 )
 
 if not defined PYTHON_CMD (
-    where python >nul 2>nul && set "PYTHON_CMD=python"
-)
-
-if not defined PYTHON_CMD (
-    echo ERROR: Python 3.11 or 3.12 was not found.
+    echo ERROR: Python 3.11, 3.12, or 3.13 was not found.
     echo Install Python 3.12 from https://www.python.org/downloads/ and try again.
     exit /b 1
 )
@@ -60,7 +59,7 @@ echo Installing dependencies...
 python -m pip install -r requirements.txt
 if errorlevel 1 (
     echo ERROR: Dependency installation failed.
-    echo Try Python 3.12 or reinstall the virtual environment.
+    echo Delete .venv folder and run script again with Python 3.12/3.11/3.13 installed.
     exit /b 1
 )
 
