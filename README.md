@@ -75,6 +75,25 @@ streamlit run src/app.py
 
 Opens at `http://localhost:8501`
 
+### Supported Python Version
+
+Use Python 3.11 or 3.12. The project dependencies, especially `scikit-learn==1.6.1`, are most reliable on those versions. Python 3.14 can trigger build errors on some Windows machines.
+
+The launcher scripts now try to pick Python 3.12 first, then 3.11, and automatically create the virtual environment.
+
+### One-Command Launchers
+
+- Windows: `run.bat`
+- macOS/Linux: `./run.sh`
+
+Both scripts will:
+- select a supported Python version
+- create `.venv` if missing
+- upgrade `pip`, `setuptools`, and `wheel`
+- install dependencies
+- generate the dataset if needed
+- start Streamlit
+
 ---
 
 ## 📊 Using the System

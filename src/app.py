@@ -15,13 +15,14 @@ import streamlit as st
 
 from config import (
     ANALYTICS_WINDOW_DAYS,
+    AUDIT_LOG_PATH,
     DATASET_PATH,
     INDIAN_CITIES,
     PAYMENT_TYPES,
     VERIFICATION_TIMEOUT_SECONDS,
 )
 from fraud_engine import FraudDetectionEngine
-from face_detection import verify_selfie_webcam
+from face_detection import verify_face_from_uploaded_file
 
 
 # Page config
@@ -99,6 +100,9 @@ if app_mode == "New Transaction":
             index=0,
         )
         client_id = engine.df[engine.df["client_name"] == client_name]["client_id"].iloc[0]
+        verified_locations = engine._get_known_locations(client_id)
+        other_locations = [location for location in INDIAN_CITIES if location not in verified_locations]
+        location_options = verified_locations + other_locations
         
         payment_type = st.selectbox(
             "Payment Type",
@@ -107,9 +111,11 @@ if app_mode == "New Transaction":
         )
     
     with col2:
+        if verified_locations:
+            st.caption(f"Verified locations for {client_name}: {', '.join(verified_locations)}")
         location_city = st.selectbox(
             "Location",
-            INDIAN_CITIES,
+            location_options,
             index=0,
         )
         
@@ -193,6 +199,10 @@ if app_mode == "New Transaction":
         
         with details_col2:
             st.write(f"**Location:** {result['location']}")
+            if result.get("known_locations"):
+                st.write(f"**Known Locations:** {', '.join(result['known_locations'])}")
+            if result.get("location_anomaly"):
+                st.error("❌ Location not verified: transaction is outside client's most used locations")
             st.write(f"**ML Score:** {result['ml_score']:.2%}")
             st.write(f"**Time:** {result['timestamp']}")
         
@@ -206,16 +216,20 @@ if app_mode == "New Transaction":
             else:
                 st.warning("⚠️ Verification Required")
                 st.write("Please verify with a live selfie to proceed with the transaction.")
+
+            # Start verification button
+            if st.button("📷 Start Face Verification", key="start_verification"):
+                st.session_state.verification_started = True
             
-            if st.button("📷 Start Selfie Verification", key="verify_btn"):
-                st.info("📷 Opening camera... Please wait.")
-                
-                # Run verification
-                verification_result = verify_selfie_webcam(
-                    timeout_seconds=VERIFICATION_TIMEOUT_SECONDS
-                )
-                
-                st.session_state.verification_state = verification_result
+            # Show camera only after button is clicked
+            if st.session_state.get("verification_started", False):
+                st.info("Capture your selfie - Make sure your face is clearly visible")
+                captured_photo = st.camera_input("Take a Photo", key="camera_verify")
+
+                if captured_photo is not None:
+                    verification_result = verify_face_from_uploaded_file(captured_photo)
+                    st.session_state.verification_state = verification_result
+                    st.session_state.verification_started = False
         
         else:  # ALLOW
             st.success("✅ Transaction Approved")
@@ -226,6 +240,9 @@ if app_mode == "New Transaction":
         verification = st.session_state.verification_state
         st.divider()
         st.subheader("Verification Result")
+
+        if verification.get("frame") is not None:
+            st.image(verification["frame"], channels="BGR", caption="Detected Face Preview")
         
         if verification["verified"]:
             st.success("✅ Selfie Verification Successful!")
@@ -250,6 +267,7 @@ if app_mode == "New Transaction":
     if st.session_state.current_result:
         st.divider()
         st.subheader("📈 30-Day Analytics")
+        st.caption(f"Current month: {datetime.now().strftime('%B %Y')}")
         
         analytics = engine.get_client_analytics(client_id, days=ANALYTICS_WINDOW_DAYS)
         
@@ -269,6 +287,8 @@ if app_mode == "New Transaction":
             trans_df = pd.DataFrame(analytics["transactions"])
             trans_df["transaction_date"] = pd.to_datetime(trans_df["transaction_date"])
             trans_df = trans_df.sort_values("transaction_date")
+            trans_df["date_label"] = trans_df["transaction_date"].dt.strftime("%d %b")
+            trans_df["transaction_month"] = trans_df["transaction_date"].dt.strftime("%b %Y")
             
             fig_line = go.Figure()
             
@@ -370,10 +390,12 @@ elif app_mode == "Client Analytics":
         trans_df = pd.DataFrame(analytics["transactions"])
         trans_df["transaction_date"] = pd.to_datetime(trans_df["transaction_date"])
         trans_df = trans_df.sort_values("transaction_date", ascending=False)
+        trans_df["date_label"] = trans_df["transaction_date"].dt.strftime("%d %b %Y, %I:%M %p")
+        trans_df["transaction_month"] = trans_df["transaction_date"].dt.strftime("%b %Y")
         
         st.subheader("Recent Transactions")
         st.dataframe(
-            trans_df[["transaction_id", "transaction_date", "payment_type", "location_city", "amount", "is_fraud"]],
+            trans_df[["transaction_id", "date_label", "transaction_month", "payment_type", "location_city", "amount", "is_fraud"]].rename(columns={"date_label": "transaction_date"}),
             use_container_width=True,
             height=400,
         )
@@ -385,10 +407,10 @@ elif app_mode == "Client Analytics":
 elif app_mode == "Audit Logs":
     st.title("📋 Audit Logs")
     
-    audit_log_path = Path("logs") / "audit_log.csv"
+    audit_log_path = AUDIT_LOG_PATH
     
     if audit_log_path.exists():
-        audit_df = pd.read_csv(audit_log_path)
+        audit_df = pd.read_csv(audit_log_path, engine="python", on_bad_lines="skip")
         
         st.subheader(f"Total Decisions Logged: {len(audit_df)}")
         

@@ -161,3 +161,44 @@ def verify_selfie_webcam(timeout_seconds: int = 30) -> dict:
             "message": f"Error: {str(e)}",
             "frame": None,
         }
+
+
+def verify_face_from_uploaded_file(uploaded_file) -> dict:
+    """Verify face from Streamlit camera_input image file."""
+    try:
+        if uploaded_file is None:
+            return {
+                "verified": False,
+                "face_detected": False,
+                "liveness_detected": False,
+                "message": "No image captured yet.",
+                "frame": None,
+            }
+
+        file_bytes = np.frombuffer(uploaded_file.getvalue(), dtype=np.uint8)
+        frame = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        if frame is None:
+            return {
+                "verified": False,
+                "face_detected": False,
+                "liveness_detected": False,
+                "message": "Unable to read captured image.",
+                "frame": None,
+            }
+
+        face_detected, annotated_frame = detect_face_in_frame(frame)
+        return {
+            "verified": bool(face_detected),
+            "face_detected": bool(face_detected),
+            "liveness_detected": bool(face_detected),
+            "message": "✅ Face detected successfully." if face_detected else "❌ Face not detected. Please retake selfie.",
+            "frame": annotated_frame,
+        }
+    except Exception as e:
+        return {
+            "verified": False,
+            "face_detected": False,
+            "liveness_detected": False,
+            "message": f"Error: {str(e)}",
+            "frame": None,
+        }

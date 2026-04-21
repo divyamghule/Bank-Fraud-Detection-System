@@ -200,6 +200,33 @@ class FraudDetectionEngine:
         
         return min(score, 1.0)  # Cap at 1.0
 
+    def _get_known_locations(self, client_id: str) -> list[str]:
+        """Return the client's usual locations (top cities from legitimate history)."""
+        client_history = self.df[self.df["client_id"] == client_id]
+        if len(client_history) == 0:
+            return []
+
+        if "is_fraud" in client_history.columns:
+            legit_history = client_history[client_history["is_fraud"] == 0]
+            location_source = legit_history if len(legit_history) > 0 else client_history
+        else:
+            location_source = client_history
+
+        location_counts = location_source["location_city"].value_counts()
+        return location_counts.head(3).index.tolist()
+
+    def _apply_location_risk_policy(self, total_risk: float, current_location: str, client_id: str) -> tuple[float, bool, list[str]]:
+        """Escalate risk when transaction occurs outside known client locations."""
+        known_locations = self._get_known_locations(client_id)
+        if not known_locations:
+            return total_risk, False, known_locations
+
+        if current_location not in known_locations:
+            # Hard location anomaly: transaction outside verified location must block.
+            return max(total_risk, 0.95), True, known_locations
+
+        return total_risk, False, known_locations
+
     def _apply_amount_risk_policy(
         self,
         total_risk: float,
@@ -286,6 +313,11 @@ class FraudDetectionEngine:
         
         # Combine scores
         total_risk = (rule_score * RULE_WEIGHT) + (ml_score * MODEL_WEIGHT)
+        total_risk, location_anomaly_flag, known_locations = self._apply_location_risk_policy(
+            total_risk=float(total_risk),
+            current_location=str(txn_series["location_city"]),
+            client_id=str(txn_series["client_id"]),
+        )
         total_risk = self._apply_amount_risk_policy(
             total_risk=float(total_risk),
             current_amount=float(txn_series["amount"]),
@@ -294,7 +326,9 @@ class FraudDetectionEngine:
         )
         
         # Determine decision
-        if total_risk >= RISK_THRESHOLDS["block"]:
+        if location_anomaly_flag:
+            decision = "BLOCK"
+        elif total_risk >= RISK_THRESHOLDS["block"]:
             decision = "BLOCK"
         elif total_risk >= RISK_THRESHOLDS["verify"]:
             decision = "VERIFY"
@@ -326,6 +360,8 @@ class FraudDetectionEngine:
                     )
                 )
             , 2) if len(client_full_history) > 0 else None,
+            "known_locations": known_locations,
+            "location_anomaly": location_anomaly_flag,
             "rule_score": round(rule_score, 4),
             "ml_score": round(ml_score, 4),
             "total_risk": round(total_risk, 4),
@@ -335,17 +371,64 @@ class FraudDetectionEngine:
         
         # Log to audit
         self._log_audit(result)
+
+        # Persist analyzed transaction for client analytics history.
+        self._append_transaction_to_dataset(txn_series, decision)
         
         return result
     
     def _log_audit(self, result: dict):
         """Log transaction decision to audit log."""
-        audit_df = pd.DataFrame([result])
+        audit_record = {
+            "client_id": result.get("client_id"),
+            "transaction_id": result.get("transaction_id"),
+            "amount": result.get("amount"),
+            "location": result.get("location"),
+            "payment_type": result.get("payment_type"),
+            "rule_score": result.get("rule_score"),
+            "ml_score": result.get("ml_score"),
+            "total_risk": result.get("total_risk"),
+            "decision": result.get("decision"),
+            "timestamp": result.get("timestamp"),
+        }
+        audit_df = pd.DataFrame([audit_record])
         
         if AUDIT_LOG_PATH.exists():
             audit_df.to_csv(AUDIT_LOG_PATH, mode='a', header=False, index=False)
         else:
             audit_df.to_csv(AUDIT_LOG_PATH, index=False)
+
+    def _append_transaction_to_dataset(self, txn_series: pd.Series, decision: str):
+        """Append new transaction to dataset so it is visible in client analytics."""
+        transaction_id = str(
+            txn_series.get("transaction_id", f"TXN_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+        )
+
+        # Prevent duplicate rows on accidental reruns.
+        if transaction_id in self.df["transaction_id"].astype(str).values:
+            return
+
+        is_fraud_flag = 1 if decision in ["VERIFY", "BLOCK"] else 0
+
+        new_row = {
+            "client_id": txn_series.get("client_id"),
+            "client_name": txn_series.get("client_name", "Unknown"),
+            "transaction_id": transaction_id,
+            "transaction_date": pd.to_datetime(txn_series.get("transaction_date", datetime.now())),
+            "payment_type": txn_series.get("payment_type", "Card"),
+            "location_city": txn_series.get("location_city", "Mumbai"),
+            "amount": float(txn_series.get("amount", 0)),
+            "merchant_category": txn_series.get("merchant_category", "General"),
+            "is_fraud": is_fraud_flag,
+        }
+
+        self.df = pd.concat([self.df, pd.DataFrame([new_row])], ignore_index=True)
+        self.df["transaction_date"] = pd.to_datetime(self.df["transaction_date"])
+
+        save_df = self.df.copy()
+        save_df["transaction_date"] = save_df["transaction_date"].dt.strftime("%Y-%m-%d %H:%M")
+        save_df["transaction_month"] = pd.to_datetime(save_df["transaction_date"]).dt.strftime("%b %Y")
+        save_df.to_csv(self.dataset_path, index=False)
     
     def get_client_analytics(self, client_id: str, days: int = ANALYTICS_WINDOW_DAYS) -> dict:
         """Get analytics for client (last N days)."""
