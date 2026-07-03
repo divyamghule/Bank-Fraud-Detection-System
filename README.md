@@ -134,7 +134,19 @@ Remove-Item -Recurse -Force .venv
 - All decisions logged with timestamp
 - Searchable by client, decision type, date
 
----
+<img width="1308" height="567" alt="image" src="https://github.com/user-attachments/assets/17b05804-e14a-4058-a1fb-1ff70dc73d38" />
+<img width="960" height="568" alt="image" src="https://github.com/user-attachments/assets/18f4d2a7-b6b5-4282-aa6d-2804fb9bac98" />
+<img width="1070" height="580" alt="image" src="https://github.com/user-attachments/assets/c46b55dd-c72f-44fd-90eb-68f01013e100" />
+<img width="1074" height="489" alt="image" src="https://github.com/user-attachments/assets/5ab412f2-f3cc-4c47-a637-c4a304d44514" />
+<img width="1080" height="395" alt="image" src="https://github.com/user-attachments/assets/322c95a7-8929-473a-811c-1ff93b1888de" />
+<img width="1079" height="520" alt="image" src="https://github.com/user-attachments/assets/adfffc9b-beb5-42df-8a87-77c13b27e26f" />
+<img width="1317" height="614" alt="image" src="https://github.com/user-attachments/assets/0fc4e4cf-3f79-455e-b0f5-bbb92a36c7b3" />
+
+
+
+
+
+
 
 ## 🔍 How Fraud Detection Works
 
