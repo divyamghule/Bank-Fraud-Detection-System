@@ -68,22 +68,45 @@ class FraudDetectionEngine:
         """Extract features for all historical transactions."""
         X_list = []
         y_list = []
-        
-        for _, row in self.df.iterrows():
-            features = self._calculate_features(row, self.df)
+
+        training_df = self.df.sort_values("transaction_date").reset_index(drop=True)
+
+        for _, row in training_df.iterrows():
+            features = self._calculate_features(row, training_df)
             if features is not None:
                 X_list.append(features)
                 y_list.append(row["is_fraud"])
         
         return np.array(X_list), np.array(y_list)
     
-    def _get_client_history(self, client_id: str, days: int = ANALYTICS_WINDOW_DAYS) -> pd.DataFrame:
-        """Get client's transaction history for last N days."""
-        cutoff_date = datetime.now() - timedelta(days=days)
-        history = self.df[
+    def _get_client_history(
+        self,
+        client_id: str,
+        days: int = ANALYTICS_WINDOW_DAYS,
+        reference_date: datetime | None = None,
+        exclude_transaction_id: str | None = None,
+    ) -> pd.DataFrame:
+        """Get client's transaction history before a reference date.
+
+        Falls back to the full prior client history when the analytics window is empty,
+        so older datasets can still train and score without producing empty features.
+        """
+        if reference_date is None:
+            reference_date = datetime.now()
+
+        cutoff_date = reference_date - timedelta(days=days)
+        client_history = self.df[
             (self.df["client_id"] == client_id) &
-            (self.df["transaction_date"] >= cutoff_date)
+            (self.df["transaction_date"] < reference_date)
         ].copy()
+
+        history = client_history[client_history["transaction_date"] >= cutoff_date].copy()
+        if len(history) == 0:
+            history = client_history
+
+        if exclude_transaction_id is not None and len(history) > 0:
+            history = history[history["transaction_id"] != exclude_transaction_id]
+
         return history
     
     def _calculate_features(self, current_txn: pd.Series, historical_df: pd.DataFrame) -> np.ndarray | None:
@@ -95,9 +118,13 @@ class FraudDetectionEngine:
         current_payment_type = current_txn["payment_type"]
         current_time = current_txn["transaction_date"]
         
-        # Get client's 7-day history (excluding current transaction)
-        history = self._get_client_history(client_id, days=ANALYTICS_WINDOW_DAYS)
-        history = history[history["transaction_id"] != current_txn.get("transaction_id", "")]
+        # Get the client's prior history relative to the current transaction time.
+        history = self._get_client_history(
+            client_id,
+            days=ANALYTICS_WINDOW_DAYS,
+            reference_date=current_time,
+            exclude_transaction_id=current_txn.get("transaction_id", ""),
+        )
         
         if len(history) == 0:
             return None  # Skip if no history
@@ -296,7 +323,12 @@ class FraudDetectionEngine:
         txn_series["transaction_date"] = pd.to_datetime(txn_series["transaction_date"])
         
         # Get client history
-        history = self._get_client_history(txn_series["client_id"], days=ANALYTICS_WINDOW_DAYS)
+        history = self._get_client_history(
+            txn_series["client_id"],
+            days=ANALYTICS_WINDOW_DAYS,
+            reference_date=txn_series["transaction_date"],
+            exclude_transaction_id=txn_series.get("transaction_id"),
+        )
         client_full_history = self.df[self.df["client_id"] == txn_series["client_id"]]
         
         # Calculate rule-based score
